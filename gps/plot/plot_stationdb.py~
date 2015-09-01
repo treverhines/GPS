@@ -1,0 +1,259 @@
+#!/usr/bin/env python
+import os
+import urllib
+import time  as timemod
+import numpy as np
+import dateutil.parser
+import matplotlib
+import matplotlib.pyplot as plt
+import scipy.sparse
+from matplotlib.widgets import Slider
+import misc
+import pandas
+import logging
+from mpl_toolkits.basemap import Basemap
+from gps.plot.basemap import Basemap
+from gps.plot.quiver import Quiver
+matplotlib.quiver.Quiver = Quiver # for error ellipses
+
+logger = logging.getLogger(__name__)
+
+TODAY = misc.decyear(*tuple(timemod.gmtime())[:3]) #today in decimal year (eg. 2014.125)
+
+
+def create_default_basemap(lat_lst,lon_lst):
+  '''
+  creates a basemap that bounds lat_lst and lon_lst
+  '''
+  llcrnrlon = min(lon_lst) - (max(lon_list) - min(lon_list))/10.0
+  llcrnrlat = min(lat_lst) - (max(lat_list) - min(lat_list))/10.0
+  urcrnrlon = max(lon_lst) + (max(lon_list) - min(lon_list))/10.0
+  urcrnrlat = max(lat_lst) + (max(lat_list) - min(lat_list))/10.0
+  lon_0 = (llcrnrlon + urcrnrlon)/2.0
+  lat_0 = (llcrnrlat + urcrnrlat)/2.0
+  return Basemap(projection='tmerc',
+                 lon_0 = lon_0,
+                 lat_0 = lat_0,
+                 llcrnrlon = llcrnrlon,
+                 llcrnrlat = llcrnrlat,
+                 urcrnrlon = urcrnrlon,
+                 urcrnrlat = urcrnrlat,
+                 resolution = 'h') 
+
+##----------------------------------------------------------------------
+def quiver_input(stationdb,basemap,time,disp_type,ref_time=None):
+  '''
+  used in the view method of StationDB
+  '''
+  x_lst = []
+  y_lst = []
+  u_lst = []
+  v_lst = []
+  z_lst = []
+  su_lst = []
+  sv_lst = []
+
+  for sid in stationdb.index:
+    lon = stationdb.metadata.loc(sid)['Longitude']
+    lat = stationdb.metadata.loc(sid)['Latitude']
+    lon = float(lon)
+    lat = float(lat)
+    x,y = basemap(lon,lat)
+    
+    try:
+      Nitp = stationdb.interpolant[sid]['North.%s' % disp_type]
+      Eitp = stationdb.interpolant[sid]['East.%s' % disp_type]
+      Vitp = stationdb.interpolant[sid]['Vertical.%s' % disp_type]
+      NSDitp = stationdb.interpolant[sid]['NorthStdDev.%s' % disp_type]
+      ESDitp = stationdb.interpolant[sid]['EastStdDev.%s' % disp_type]
+      VSDitp = stationdb.interpolant[sid]['VerticalStdDev.%s' % disp_type]
+      NECitp = stationdb.interpolant[sid]['NorthEastCorr.%s' % disp_type]
+      NVCitp = stationdb.interpolant[sid]['NorthVerticalCorr.%s' % disp_type]
+      EVCitp = stationdb.interpolant[sid]['EastVerticalCorr.%s' % disp_type]
+
+    except KeyError:
+      continue
+   
+    try:
+      if ref_time is not None:
+        uref = Nitp(ref_time)     
+        vref = Eitp(ref_time)     
+        zref = Vitp(ref_time) 
+      else: 
+        uref = 0.0     
+        vref = 0.0     
+        zref = 0.0     
+
+      u = Nitp(time) - uref
+      v = Eitp(time) - vref
+      z = Vitp(time) - zref
+      su = NSDitp(time)
+      sv = ESDitp(time) 
+
+    except ValueError:
+      continue
+
+    u_lst += [u]
+    v_lst += [v]
+    su_lst += [su]
+    sv_lst += [sv]
+    z_lst += [z]
+    x_lst += [x]
+    y_lst += [y]
+
+  return (x_lst,y_lst,u_lst,v_lst,z_lst,su_lst,sv_lst)
+
+##------------------------------------------------------------------------------
+def background_map(basemap,ax,artists):
+  '''
+  used in the view method of StationDB
+  '''
+  ax.patch.set_facecolor([0.0,0.0,1.0,0.2])
+  basemap.drawtopography(ax=ax,vmin=-6000,vmax=4000,alpha=1.0,zorder=0)
+  basemap.drawcoastlines(ax=ax,linewidth=1.5,zorder=1)
+  basemap.drawcountries(ax=ax,linewidth=1.5,zorder=1)
+  basemap.drawstates(ax=ax,linewidth=1,zorder=1)
+  basemap.drawrivers(ax=ax,linewidth=1,zorder=1)
+  basemap.drawmeridians(np.arange(np.floor(basemap.llcrnrlon),np.ceil(basemap.urcrnrlon),1.0),
+                        labels=[0,0,0,1],dashes=[2,2],
+                        ax=ax,zorder=1)
+  basemap.drawparallels(np.arange(np.floor(basemap.llcrnrlat),np.ceil(basemap.urcrnrlat),1.0),
+                        labels=[1,0,0,0],dashes=[2,2],
+                        ax=ax,zorder=1)
+  plt.sca(ax)
+  basemap.drawmapscale(units='km',
+                     lat=basemap.latmin+(basemap.latmax-basemap.latmin)/10.0,
+                     lon=basemap.lonmax-(basemap.lonmax-basemap.lonmin)/5.0,
+                     fontsize=16,
+                     lon0=(basemap.lonmin+basemap.lonmax)/2.0,
+                     lat0=(basemap.latmin+basemap.latmax)/2.0,
+                     barstyle='fancy',
+                     length=100,zorder=10)
+  #basemap.fillcontinents(color=[0.7,0.7,0.7,0.7],zorder=1,ax=ax)
+  for a in artists:
+    ax.add_artist(a)
+
+##------------------------------------------------------------------------------
+def draw_stations(stationdb,basemap,ax,disp_type):
+  '''
+  used in the view method of StationDB
+  '''
+  station_point_lst = []
+  station_point_label_lst = []
+  station_label_lst = []
+  for sid,sta in stationdb.iteritems():  
+    if not any([('North.%s' % i) in sta.keys() for i in disp_type]):
+      continue
+
+    sidx = np.nonzero(stationdb.metadata['Name'] == sid)[0]
+    lon = stationdb.metadata.irow(sidx)['Longitude']
+    lat = stationdb.metadata.irow(sidx)['Latitude']
+    lon = float(lon)
+    lat = float(lat)
+    x,y = basemap(lon,lat)
+    station_point = ax.plot(x,y,'ko',markersize=3,picker=8,zorder=2)
+    station_point_label_lst += [station_point[0].get_label()]
+    station_label_lst += [sid]
+    station_point_lst += station_point
+
+  station_label_lst = np.array(station_label_lst,dtype=str)
+  station_point_label_lst = np.array(station_point_label_lst,dtype=str)
+  return station_label_lst,station_point_label_lst
+
+##------------------------------------------------------------------------------
+def draw_scale(basemap,ax,scale_length,quiver_scale,sigma_list,color_list,text_list):
+  '''
+  used in the view method of StationDB
+
+  scale length is in mm
+  '''
+  scale_items = len(color_list)
+
+  u_scale = np.array([scale_length])
+  sigma_u_scale = np.array(sigma_list)
+  sigma_v_scale = np.array(sigma_list)
+  v_scale = np.array([0.0])
+  z_scale = np.array([0.0])
+  x_scale = np.array([basemap.urcrnrx/10.0])
+  y_scale = np.array([basemap.urcrnry/10.0])
+
+  x = basemap.urcrnrx/10.0
+  y = basemap.urcrnry/15.0
+  dy = basemap.urcrnry/20.0
+
+  for i in range(scale_items):
+    ax.text(x,y+i*dy,text_list[i],fontsize=16)
+    ax.quiver(x_scale,y_scale+i*dy,u_scale,v_scale,sigma_u_scale[i],sigma_v_scale[i],
+              scale_units='xy',
+              angles='xy',
+              width=0.004,
+              scale=quiver_scale,
+              color=color_list[i])
+
+  ax.text(x,y+scale_items*dy,'%s cm displacement' % np.round(scale_length/10.0,2),
+          fontsize=16)
+
+##------------------------------------------------------------------------------
+def plot_tseries(ax,name,stationdb,direction,disp_type,formats,time_range,ref_time=None):
+  '''
+  used in the view method of StationDB
+  '''
+  # 1.0 year ticks
+  #logdt = round(np.log2((max(station['time'])-min(station['time']))/5.0))
+  dt    = 2.0
+  tick_min = round(min(stationdb.data[name].index)/dt)*dt
+  tick_max = round(max(stationdb.data[name].index)/dt)*dt + dt
+  ticks = np.arange(tick_min,tick_max,dt)
+
+  ax.cla()
+  min_disp = np.inf
+  max_disp = -np.inf
+  for idx,d in enumerate(disp_type):
+    station = stationdb.data[name]
+    time = station.index
+    if not ('%s.%s' % (direction,d)) in station.keys():
+      continue
+
+    if (idx == 0) & (direction == 'North'):
+      ax.set_title('Station %s' % name,fontsize=16)
+
+    try:
+      itp = stationdb.interpolants[name]['%s.%s' % (direction,d)]
+      disp = stationdb.data[name]['%s.%s' % (direction,d)]
+    except KeyError:
+      continue
+    
+    try:
+      if ref_time is not None:
+        ref_disp = itp(ref_time)
+      else:
+        ref_disp = 0.0
+     
+    except ValueError:
+      continue
+
+    disp -= ref_disp
+
+    if any(disp[(time>=time_range[0]) & (time<=time_range[1])] < min_disp):
+      min_disp = min(disp[(time>=time_range[0]) & (time<=time_range[1])])
+
+    if any(disp[(time>=time_range[0]) & (time<=time_range[1])] > max_disp):
+      max_disp = max(disp[(time>=time_range[0]) & (time<=time_range[1])])
+
+    std = stationdb.data[name]['%sStdDev.%s' % (direction,d)]
+    if (d == 'Raw') |(d == 'Detrended'):
+      ax.errorbar(time,disp,std,fmt=formats[idx])
+    else:
+      ax.plot(time,disp,formats[idx],lw=2)
+
+  ax.set_xticks(ticks)
+  diff_time = abs(time_range[0] - time_range[1])
+  ax.set_xlim([time_range[0]-diff_time*0.05,time_range[1]+diff_time*0.05])
+  diff_disp = abs(min_disp - max_disp) 
+  ax.set_ylim([min_disp-diff_disp*.05,max_disp+diff_disp*.05]) 
+  ax.ticklabel_format(useOffset=False)
+  ax.minorticks_on()
+  ax.set_ylabel('%s disp. (mm)' % direction,fontsize=16)
+
+
+
