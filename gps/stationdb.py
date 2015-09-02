@@ -14,7 +14,7 @@ import misc
 import pandas
 import logging
 import scipy.interpolate
-import gps.plot.plot_stationdb as plot_stationdb
+#import gps.plot.plot_stationdb as plot_stationdb
 from scipy.interpolate import interp1d
 
 logger = logging.getLogger(__name__)
@@ -107,6 +107,7 @@ class MaskedInterp1D(interp1d):
                       **kwargs)
 
   def __call__(self,x,tol=np.inf):
+    nearest_arg = np.argmin(np.abs(self.x[:,None] - x),0)
     itp = interp1d.__call__(self,x)
     itp = np.ma.array(itp,mask=self.invalid_mask(x,tol))
     return itp
@@ -114,6 +115,7 @@ class MaskedInterp1D(interp1d):
   def invalid_mask(self,x,tol):
     isscalar = np.isscalar(x)
     nearest = np.min(np.abs(self.x[:,None] - x),0)
+
     if isscalar:
       nearest = nearest[0]
 

@@ -143,10 +143,49 @@ class Test(unittest.TestCase):
     self.assertTrue(np.all(np.isclose(result,true)))    
 
   def test_ECEF_to_ENU(self):  
-    true = (-1.0,-1.0,-200.0)
-    ecef = gps.conversions.geodetic_to_ECEF(*true)            
-    result = gps.conversions.ECEF_to_geodetic(*ecef)    
-    self.assertTrue(np.all(np.isclose(result,true)))    
+    loc = (0.0,0.0,0.0)
+    ecef = (0.0,0.0,1.0)
+    true = (0.0,1.0,0.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (0.0,0.0,0.0)
+    ecef = (1.0,0.0,0.0)
+    true = (0.0,0.0,1.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (0.0,0.0,0.0)
+    ecef = (0.0,1.0,0.0)
+    true = (1.0,0.0,0.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (90.0,0.0,0.0)
+    ecef = (1.0,0.0,0.0)
+    true = (-1.0,0.0,0.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (90.0,0.0,0.0)
+    ecef = (0.0,1.0,0.0)
+    true = (0.0,0.0,1.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (90.0,0.0,0.0)
+    ecef = (0.0,0.0,1.0)
+    true = (0.0,1.0,0.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+    loc = (0.0,90.0,0.0)
+    ecef = (0.0,0.0,1.0)
+    true = (0.0,0.0,1.0)
+    result = gps.conversions.ECEF_to_ENU(*(ecef+loc))      
+    self.assertTrue(np.all(np.isclose(result,true)))          
+
+
 
 
 unittest.main()

@@ -1,0 +1,4 @@
+#!/usr/bin/env python
+
+class NearestMaskedInterp:
+  def __init__(x,y,dx=None):
