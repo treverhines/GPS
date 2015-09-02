@@ -158,8 +158,8 @@ class Station:
     self.time = time
     self.val = val
     self.cov = cov
-    self.val_itp = maskitp.MaskedNearestInterp(data['time'],val,tol)
-    self.cov_itp = maskitp.MaskedNearestInterp(data['time'],cov,tol)
+    self.val_itp = maskitp.MaskedNearestInterp(time,val,tol)
+    self.cov_itp = maskitp.MaskedNearestInterp(time,cov,tol)
 
   def __repr__(self):
     string = '\nStation\n'
@@ -246,7 +246,7 @@ class StationDB(collections.OrderedDict):
     return string
 
 
-  def write_data_array(self,output_file_name,times):
+  def write_data_array(self,output_file_name,times,zero_initial_value=True):
     # find distance to next nearest time                         
     f = h5py.File(output_file_name,'w')
     names = self.keys()
@@ -257,12 +257,20 @@ class StationDB(collections.OrderedDict):
     f['name'] = names
     f['time'] = times
     f.create_dataset('mean',shape=(len(times),len(names),3),dtype=float)
-    f.create_dataset('mask',shape=(len(times),len(names),3),dtype=bool)
+    f.create_dataset('mask',shape=(len(times),len(names)),dtype=bool)
     f.create_dataset('covariance',shape=(len(times),len(names),3,3),dtype=float)
     for i,n in enumerate(names):
+      logger.info('writing displacement data for station %s' % n)
       mean,cov = self[n](times)
+      if zero_initial_value:
+        unmasked_rows = np.nonzero(~mean.mask)[0]
+        if len(unmasked_rows) != 0:
+          initial_unmasked_row = unmasked_rows[0]
+          initial_unmasked_disp = mean[initial_unmasked_row,:] 
+          mean -= initial_unmasked_disp
+
       f['mean'][:,i,:] = mean.data
-      f['mask'][:,i,:] = mean.mask
+      f['mask'][:,i] = mean.mask[:,0]
       f['covariance'][:,i,:,:] = cov.data
 
     f.close()
