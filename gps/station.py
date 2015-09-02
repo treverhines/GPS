@@ -4,11 +4,16 @@ import numpy as np
 import datetime
 import time 
 import re
+import os
 import logging
 import conversions
 import modest
 import maskitp
+import collections
+import h5py
+
 logger = logging.getLogger(__name__)
+
 
 def find_field(field,s):
   out = re.search('%s\s*:\s*(.*?)\n' % field,s,re.DOTALL+re.IGNORECASE)
@@ -38,10 +43,10 @@ def string_to_decyear(s,fmt):
   return decimal_time
 
 def parse_pos_string(string):
-  metadata = {'station name':None,
-              'station ID':None,
-              'start time':None,
-              'end time':None,
+  metadata = {'name':None,
+              'id':None,
+              'start':None,
+              'end':None,
               'reference frame':None,
               'longitude':None,
               'latitude':None,
@@ -61,13 +66,13 @@ def parse_pos_string(string):
 
   version = find_field('Format Version',string)
   if version == '1.1.0':
-    metadata['reference frame'] = find_field('reference frame',string)
-    metadata['station name'] = find_field('station name',string)
-    metadata['station ID'] = find_field('4-character ID',string)
+    metadata['reference'] = find_field('reference frame',string)
+    metadata['name'] = find_field('name',string)
+    metadata['id'] = find_field('4-character ID',string)
     start_time_string = find_field('First Epoch',string)
-    metadata['start time'] = string_to_decyear(start_time_string,'%Y%m%d %H%M%S')
+    metadata['start'] = string_to_decyear(start_time_string,'%Y%m%d %H%M%S')
     end_time_string = find_field('Last Epoch',string)
-    metadata['end time'] = string_to_decyear(end_time_string,'%Y%m%d %H%M%S')
+    metadata['end'] = string_to_decyear(end_time_string,'%Y%m%d %H%M%S')
     ref_pos_string =  find_field('NEU Reference position',string)
     ref_pos = [float(i) for i in ref_pos_string.strip().split()[:3]]
     lon,lat = conversions.bound_lon_lat(ref_pos[1],ref_pos[0]) 
@@ -128,37 +133,46 @@ class Station:
     pos_string = f.read()
     f.close()
     meta,data = parse_pos_string(pos_string)
+    meta['interp. tolerance'] = tol
+
+    time = data['time']
+
     val = np.array([data['east disp.'],
                     data['north disp.'],
                     data['vert. disp.']])
+
     val = np.einsum('ij->ji',val)
 
     cov = [[data['east std. dev.']**2,
-            data['north-east corr.']*(data['east std. dev.']*data['north std. dev.']),
-            data['east-vert. corr.']*(data['east std. dev.']*data['vert. std. dev.'])],
-           [data['north-east corr.']*(data['east std. dev.']*data['north std. dev.']),
+            data['north-east corr.']*data['east std. dev.']*data['north std. dev.'],
+            data['east-vert. corr.']*data['east std. dev.']*data['vert. std. dev.']],
+           [data['north-east corr.']*data['east std. dev.']*data['north std. dev.'],
             data['north std. dev.']**2,
-            data['north-vert. corr.']*(data['north std. dev.']*data['vert. std. dev.'])],
-           [data['east-vert. corr.']*(data['east std. dev.']*data['vert. std. dev.']),
-            data['north-vert. corr.']*(data['north std. dev.']*data['vert. std. dev.']),
+            data['north-vert. corr.']*data['north std. dev.']*data['vert. std. dev.']],
+           [data['east-vert. corr.']*data['east std. dev.']*data['vert. std. dev.'],
+            data['north-vert. corr.']*data['north std. dev.']*data['vert. std. dev.'],
             data['vert. std. dev.']**2]]
 
     cov = np.einsum('ijk->kij',cov)
     self.meta = meta 
+    self.time = time
     self.val = val
     self.cov = cov
     self.val_itp = maskitp.MaskedNearestInterp(data['time'],val,tol)
     self.cov_itp = maskitp.MaskedNearestInterp(data['time'],cov,tol)
 
   def __repr__(self):
-    string = 'Station\n'
-    string += '  id: %s (%s)\n' % (self.meta['station ID'],self.meta['station name']) 
-    string += '  time range: %s - %s\n' % (self.meta['start time'],self.meta['end time']) 
+    string = '\nStation\n'
+    string += '  id: %s (%s)\n' % (self.meta['id'],self.meta['name']) 
+    string += '  time range: %.2f to %.2f\n' % (self.meta['start'],self.meta['end']) 
     string += '  observations: %s\n' % self.meta['observations']
-    string += '  reference frame: %s\n' % self.meta['reference frame']
-    string += '  longitude: %s\n' % self.meta['longitude']
-    string += '  latitude: %s\n' % self.meta['latitude']
-    string += '  height: %s' % self.meta['height']
+    string += '  reference: %s\n' % self.meta['reference']
+    string += '  longitude: %.2f\n' % self.meta['longitude']
+    string += '  latitude: %.2f\n' % self.meta['latitude']
+    string += '  height: %.2f m\n' % self.meta['height']
+    string += '  interp. tolerance: %.4f years (%.1f days)' % (
+                 self.meta['interp. tolerance'],
+                 self.meta['interp. tolerance']*365)
     return string
 
   def __call__(self,t):
@@ -167,8 +181,94 @@ class Station:
   def __getitem__(self,i):
     return self.val[i],self.cov[i]        
 
-class StationDB:
-  pass
+
+class StationDB(collections.OrderedDict):
+  def __init__(self,database_directory,tol=1/365):
+    collections.OrderedDict.__init__(self)
+    pos_files = os.listdir(database_directory)
+    # sort stations alphabetically
+    pos_files = np.sort(pos_files)
+    pos_files = [database_directory+'/'+i for i in pos_files]
+    self.meta = {'start':np.inf,
+                 'end':-np.inf,
+                 'reference':None,
+                 'stations':0,
+                 'observations':0,
+                 'min_longitude':180,
+                 'max_longitude':-180,
+                 'min_latitude':90,
+                 'max_latitude':-90}
+    for i in pos_files:
+      sta = Station(i,tol=tol)
+      logger.info('initializing station %s:%s' % (sta.meta['id'],sta.__repr__()))
+      if self.meta['reference'] is None:
+        self.meta['reference'] = sta.meta['reference']
+
+      if self.meta['reference'] != sta.meta['reference']:
+        logger.warning(
+          'reference frame for station %s, %s, is not the same as '
+          'previously added stations' % (sta['id'],sta['reference']))
+
+      if self.meta['start'] > sta.meta['start']:
+        self.meta['start'] = sta.meta['start']
+
+      if self.meta['end'] < sta.meta['end']:
+        self.meta['end'] = sta.meta['end']
+
+      if self.meta['min_longitude'] > sta.meta['longitude']:
+        self.meta['min_longitude'] = sta.meta['longitude']
+
+      if self.meta['min_latitude'] > sta.meta['latitude']:
+        self.meta['min_latitude'] = sta.meta['latitude']
+
+      if self.meta['max_longitude'] < sta.meta['longitude']:
+        self.meta['max_longitude'] = sta.meta['longitude']
+
+      if self.meta['max_latitude'] < sta.meta['latitude']:
+        self.meta['max_latitude'] = sta.meta['latitude']
+
+      self.meta['observations'] += sta.meta['observations']
+      self.meta['stations'] += 1
+
+      self[sta.meta['id']] = sta
+        
+
+  def __repr__(self):
+    string = '\nStationDB\n'
+    string += '  time range: %.2f to %.2f\n' % (self.meta['start'],self.meta['end']) 
+    string += '  stations: %s\n' % self.meta['stations']
+    string += '  observations: %s\n' % self.meta['observations']
+    string += '  reference: %s\n' % self.meta['reference']
+    string += '  longitude range: %.2f to %.2f\n' % (self.meta['min_longitude'], 
+                                                    self.meta['max_longitude'])
+    string += '  latitude range: %.2f - %.2f\n' % (self.meta['min_latitude'], 
+                                                   self.meta['max_latitude'])
+    return string
+
+
+  def write_data_array(self,output_file_name,times):
+    # find distance to next nearest time                         
+    f = h5py.File(output_file_name,'w')
+    names = self.keys()
+    lon = [self[n].meta['longitude'] for n in names]
+    lat = [self[n].meta['latitude'] for n in names]
+    positions = np.array([lon,lat]).transpose()
+    f['position'] = positions
+    f['name'] = names
+    f['time'] = times
+    f.create_dataset('mean',shape=(len(times),len(names),3),dtype=float)
+    f.create_dataset('mask',shape=(len(times),len(names),3),dtype=bool)
+    f.create_dataset('covariance',shape=(len(times),len(names),3,3),dtype=float)
+    for i,n in enumerate(names):
+      mean,cov = self[n](times)
+      f['mean'][:,i,:] = mean.data
+      f['mask'][:,i,:] = mean.mask
+      f['covariance'][:,i,:,:] = cov.data
+
+    f.close()
+
+
+
     
     
 
