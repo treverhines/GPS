@@ -11,6 +11,7 @@ import modest
 import maskitp
 import collections
 import h5py
+import plot
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,9 @@ class Station:
     self.time = time
     self.val = val
     self.cov = cov
+    self.time.flags['WRITEABLE'] = False
+    self.val.flags['WRITEABLE'] = False
+    self.cov.flags['WRITEABLE'] = False
     self.val_itp = maskitp.MaskedNearestInterp(time,val,tol)
     self.cov_itp = maskitp.MaskedNearestInterp(time,cov,tol)
 
@@ -186,6 +190,8 @@ class StationDB(collections.OrderedDict):
   def __init__(self,database_directory,tol=1/365):
     collections.OrderedDict.__init__(self)
     pos_files = os.listdir(database_directory)
+    # remove files without a .pos extension
+    pos_files = [i for i in pos_files if i[-4:] == '.pos']
     # sort stations alphabetically
     pos_files = np.sort(pos_files)
     pos_files = [database_directory+'/'+i for i in pos_files]
@@ -201,13 +207,48 @@ class StationDB(collections.OrderedDict):
     for i in pos_files:
       sta = Station(i,tol=tol)
       logger.info('initializing station %s:%s' % (sta.meta['id'],sta.__repr__()))
+      self[sta.meta['id']] = sta
+
+    self._update_meta()
+        
+
+  def pop(self,*args,**kwargs):
+    collections.OrderedDict.pop(self,*args,**kwargs)
+    self._update_meta()
+
+  def popitem(self,*args,**kwargs):
+    Collections.OrderedDict.pop(self,*args,**kwargs)
+    self._update_meta()
+
+  def update(self,*args,**kwargs):
+    Collections.OrderedDict.pop(self,*args,**kwargs)
+    self._update_meta()
+
+  
+  def _update_meta(self):
+    self.meta = {'start':np.inf,
+                 'end':-np.inf,
+                 'reference':None,
+                 'stations':0,
+                 'observations':0,
+                 'min_longitude':180,
+                 'max_longitude':-180,
+                 'min_latitude':90,
+                 'max_latitude':-90}
+
+    for key,sta in self.iteritems():
+      if not isinstance(sta,Station):
+        logger.warning('item with key %s is not a Station instance' % key)
+        continue
+
       if self.meta['reference'] is None:
         self.meta['reference'] = sta.meta['reference']
 
       if self.meta['reference'] != sta.meta['reference']:
         logger.warning(
           'reference frame for station %s, %s, is not the same as '
-          'previously added stations' % (sta['id'],sta['reference']))
+          'previously added stations. Remove station with "pop" '
+          'method' % (sta['id'],sta['reference']))
 
       if self.meta['start'] > sta.meta['start']:
         self.meta['start'] = sta.meta['start']
@@ -230,9 +271,6 @@ class StationDB(collections.OrderedDict):
       self.meta['observations'] += sta.meta['observations']
       self.meta['stations'] += 1
 
-      self[sta.meta['id']] = sta
-        
-
   def __repr__(self):
     string = '\nStationDB\n'
     string += '  time range: %.2f to %.2f\n' % (self.meta['start'],self.meta['end']) 
@@ -241,7 +279,7 @@ class StationDB(collections.OrderedDict):
     string += '  reference: %s\n' % self.meta['reference']
     string += '  longitude range: %.2f to %.2f\n' % (self.meta['min_longitude'], 
                                                     self.meta['max_longitude'])
-    string += '  latitude range: %.2f - %.2f\n' % (self.meta['min_latitude'], 
+    string += '  latitude range: %.2f to %.2f\n' % (self.meta['min_latitude'], 
                                                    self.meta['max_latitude'])
     return string
 
@@ -274,6 +312,21 @@ class StationDB(collections.OrderedDict):
       f['covariance'][:,i,:,:] = cov.data
 
     f.close()
+
+  def view(self,times=None,zero_initial_value=True,**kwargs):
+    output_file_name = '.temp.h5'
+    if times is None:
+      times = np.arange(self.meta['start'],self.meta['end'],1.0/365)
+
+    self.write_data_array(output_file_name,
+                          times,
+                          zero_initial_value=zero_initial_value)
+    f = h5py.File(output_file_name)    
+    plot.view([f],**kwargs)
+    f.close()
+    os.remove(output_file_name)
+    
+
 
 
 
