@@ -185,6 +185,17 @@ class Station:
   def __getitem__(self,i):
     return self.val[i],self.cov[i]        
 
+  def detrend(self,intercept,slope):
+    # uncertainty should be added to this later  
+    intercept = np.asarray(intercept)
+    slope = np.asarray(slope)
+    assert len(intercept) == 3
+    assert len(slope) == 3
+    trend = intercept + slope*self.time[:,None]     
+    self.val.flags['WRITEABLE'] = True
+    self.val -= trend
+    self.cov.flags['WRITEABLE'] = False   
+
 
 class StationDB(collections.OrderedDict):
   def __init__(self,database_directory,tol=1/365):

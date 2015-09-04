@@ -79,7 +79,7 @@ def itrf2008pmm(lon,lat,h,plate):
              ITRFPMM_SIGMA[plate][0]**2 + ITRFPMM_SIGMA[plate][1]**2 + T_SIGMA[2]**2]
   cov_xyz = np.diag(cov_xyz)
   
-  R = ECEF_to_ENU_matrix(lon,lat,h,ref='WGS84')
+  R = conversions.ECEF_to_ENU_matrix(lon,lat,h)
   cov_enu = R.dot(cov_xyz).dot(R.transpose())
   vel_enu = R.dot(vel_xyz)
   return vel_enu,cov_enu
