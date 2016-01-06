@@ -25,6 +25,9 @@ def quiver_args(position,disp_array,cov_array=None,mask=None):
     var_u = cov_array[:,0,0]
     var_v = cov_array[:,1,1]
     cov_uv = cov_array[:,0,1]
+    #var_u = cov_array[:,0]
+    #var_v = cov_array[:,1]
+    #cov_uv = 0.0*var_u
     var_u[mask] = 1e-8
     var_v[mask] = 1e-8
     cov_uv[mask] = 1e-8
@@ -70,7 +73,7 @@ def view(data_list,
          draw_map=True,
          quiver_scale=0.00001,
          scale_length=1.0):
-  # data list is a list of dictionary-lie objects with keys: mean,
+  # data list is a list of dictionary-like objects with keys: mean,
   # covariance, mask, position, time
   mask_list = []
   mean_list = []
