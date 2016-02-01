@@ -70,6 +70,7 @@ def create_default_basemap(lat_lst,lon_lst):
 
 def view(data_list,
          name_list=None,
+         units=None,
          draw_map=True,
          quiver_scale=0.00001,
          scale_length=1.0):
@@ -98,6 +99,7 @@ def view(data_list,
         lon,
         lat,
         mask_list,
+        units=units,
         disp_type=name_list,
         draw_map=draw_map,
         quiver_scale=quiver_scale,
@@ -110,6 +112,7 @@ def _view(displacement_list,
           lon,
           lat,
           mask,
+          units='meters',
           disp_type=None,
           colors=None,
           draw_map=False,
@@ -246,7 +249,7 @@ def _view(displacement_list,
                   color=colors[i])
 
   main_ax.text(x_text,y_text+N*dy_text,
-               '%s meter displacement' % np.round(scale_length,3),
+               '%s %s' % (np.round(scale_length,3),units),
                fontsize=16)
 
   def _slider_update(t):
