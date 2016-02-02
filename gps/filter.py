@@ -81,13 +81,12 @@ def _stochastic_filter(u,var,t,alpha,
   # turn var into an array of covariance matrices
   var = var[:,None,None]
   t = np.asarray(t)
+
   if jumps is None:
     jumps = []
 
-  # remove jumps that are not within the observation time interval
-  jumps = [j for j in jumps if (j>t[0]) & (j<t[-1])]
   jumps = np.asarray(jumps)
-  
+
   N = t.shape[0]
   J = jumps.shape[0]
   M = 2 + J
@@ -95,6 +94,9 @@ def _stochastic_filter(u,var,t,alpha,
   # return empty arrays if the time length is zero
   if N == 0:
     return np.zeros(0),np.zeros(0)
+
+  # remove jumps that are not within the observation time interval
+  jumps = np.array([j for j in jumps if (j>t[0]) & (j<t[-1])])
 
   state_prior = np.zeros((N,M))
   state_post = np.zeros((N,M))

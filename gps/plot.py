@@ -2,9 +2,10 @@
 from __future__ import division
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.cm
 from matplotlib.widgets import Slider
-from tplot.basemap import Basemap
-from tplot.quiver import Quiver
+from myplot.basemap import Basemap
+from myplot.quiver import Quiver
 import misc
 import matplotlib
 matplotlib.quiver.Quiver = Quiver # for error ellipses
@@ -121,6 +122,7 @@ def _view(displacement_list,
           map_resolution=200,
           artists=None):
 
+  lonlat = np.array([lon,lat]).T
   #times -= 2010.0
   N = len(displacement_list)
   Nx = len(lon)
@@ -156,7 +158,7 @@ def _view(displacement_list,
     position = np.array(position).transpose()
     main_ax.patch.set_facecolor([0.0,0.0,1.0,0.2])
     basemap.drawtopography(ax=main_ax,vmin=-6000,vmax=4000,
-                         alpha=1.0,resolution=map_resolution,zorder=0)
+                           alpha=0.5,resolution=map_resolution,zorder=0)
     basemap.drawcoastlines(ax=main_ax,linewidth=1.5,zorder=1)
     basemap.drawcountries(ax=main_ax,linewidth=1.5,zorder=1)
     basemap.drawstates(ax=main_ax,linewidth=1,zorder=1)
@@ -177,6 +179,7 @@ def _view(displacement_list,
                        lat0=(basemap.latmin+basemap.latmax)/2.0,
                        barstyle='fancy',ax=main_ax,
                        length=100,zorder=10)
+    vertical_image = [basemap.drawscalar(0*position[:,0],lonlat,cmap=matplotlib.cm.seismic,zorder=-1,vmin=-0.01,vmax=0.01)]
 
   else:
     position = np.array([lon,lat]).transpose()
@@ -254,6 +257,13 @@ def _view(displacement_list,
 
   def _slider_update(t):
     time_idx = np.argmin(abs(t - times))
+    vertical_image[0].remove()
+    vert_mask = mask[0][time_idx,:]
+    vert_disp = displacement_list[0][time_idx,~vert_mask,2]
+    vertical_image[0] = basemap.drawscalar(vert_disp,lonlat[~vert_mask],
+                                           cmap=matplotlib.cm.seismic,
+                                           zorder=-1,vmin=-0.01,vmax=0.01)
+    #plt.colorbar(vertical_image[0])
     for idx in range(N):
       if covariance_list[idx] is not None:      
         args = quiver_args(position,
