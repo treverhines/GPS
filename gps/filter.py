@@ -102,6 +102,8 @@ def _stochastic_filter(u,var,t,alpha,
   state_post = np.zeros((N,M))
   state_prior_cov = np.zeros((N,M,M))
   state_post_cov = np.zeros((N,M,M))
+  state_smooth = np.zeros((N,M))
+  state_smooth_cov = np.zeros((N,M,M))
   trans = np.zeros((N,M,M))
 
   # set initial prior covariance
@@ -136,8 +138,6 @@ def _stochastic_filter(u,var,t,alpha,
       state_prior_cov[i+1] = out[1]
     
   # smooth the state variables 
-  state_smooth = np.zeros((N,M))
-  state_smooth_cov = np.zeros((N,M,M))
   state_smooth[-1] = state_post[-1]
   state_smooth_cov[-1] = state_post_cov[-1]
 

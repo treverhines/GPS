@@ -158,7 +158,7 @@ def _view(displacement_list,
     position = np.array(position).transpose()
     main_ax.patch.set_facecolor([0.0,0.0,1.0,0.2])
     basemap.drawtopography(ax=main_ax,vmin=-6000,vmax=4000,
-                           alpha=0.5,resolution=map_resolution,zorder=0)
+                           alpha=0.6,resolution=map_resolution,zorder=0)
     basemap.drawcoastlines(ax=main_ax,linewidth=1.5,zorder=1)
     basemap.drawcountries(ax=main_ax,linewidth=1.5,zorder=1)
     basemap.drawstates(ax=main_ax,linewidth=1,zorder=1)
@@ -180,7 +180,7 @@ def _view(displacement_list,
                        barstyle='fancy',ax=main_ax,
                        length=100,zorder=10)
     vertical_image = [basemap.drawscalar(0*position[:,0],lonlat,cmap=matplotlib.cm.seismic,zorder=-1,vmin=-0.01,vmax=0.01)]
-
+    plt.colorbar(vertical_image[0])
   else:
     position = np.array([lon,lat]).transpose()
     main_ax.set_aspect('equal')
