@@ -39,25 +39,24 @@ def remove_jumps_and_seasonals(u,var,t,jumps):
 
 
 # create true signal
-N = 2000
+N = 100
 t = np.linspace(-2.5,4.5,N)
 
-utrue = 0.01 + 0.0*t + 0.02*H(t) + 0.01*np.sqrt(H(t)*t/0.5) 
+utrue = 0.0 + 1.0*t + 1.0*H(t) + 0.0*H(t)*t + np.log(1 + H(t)*t/0.5) + np.sin(2*np.pi*t)
 
 # create synthetic correlated noise
-cov = 0.001**2/(1 + 50.0*(t[:,None] - t[None,:])**2)
-cov += 0.001**2*np.eye(N)
-noise = np.random.multivariate_normal(np.zeros(N),cov,1)[0] 
-noise += 0.001*np.sin(2*np.pi*(t-0.5)) + 0.001*np.cos(4*np.pi*(t-0.17)) 
-noise -= 0.01*H(t-2.0) 
+cov = 0.1**2*np.eye(N)
+#noise += 0.001*np.sin(2*np.pi*(t-0.5)) + 0.001*np.cos(4*np.pi*(t-0.17)) 
+#noise -= 0.01*H(t-2.0) 
 var = np.diag(cov)
-uobs = utrue + noise 
+uobs = utrue# + noise 
 #upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[])
-upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[2.0])
+upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[2.0],diff=1)
 
 plt.plot(t,utrue,'b-')
 plt.errorbar(t,uobs,np.sqrt(var),fmt='k.')
 plt.errorbar(t,upred,np.sqrt(uvar),fmt='g-')
+plt.plot(t,1 + 1.0/(t+0.5))
 plt.show()
 quit()
 #remove_jumps_and_seasonals(uobs,var,t,[])

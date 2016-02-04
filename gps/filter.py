@@ -258,7 +258,7 @@ def _pslog(t):
   return np.log(1 + _H(t)*t)
 
 
-def log_filter(u,var,t,start,jumps,trials=10):
+def log_filter(u,var,t,start,jumps,trials=10,diff=0):
   '''
   Assumes that the underlying signal can be described by
   
@@ -284,26 +284,42 @@ def log_filter(u,var,t,start,jumps,trials=10):
   J = len(jumps)
   # total number of model parameters 
   M = 14 + J 
-  def system(m):
-    out = np.zeros(len(t)) 
-    out += m[0]  
-    out += m[1]*t
-    out += m[2]*_H(t-start)
-    out += m[3]*_H(t-start)*(t-start)
-    out += m[4]*_pslog((t-start)/m[5])
-    out += m[6]*_pslog((t-start)/m[7])
-    out += m[8]*_pslog((t-start)/m[9])
-    out += m[10]*np.sin(2*np.pi*t)  
-    out += m[11]*np.sin(4*np.pi*t)  
-    out += m[12]*np.cos(2*np.pi*t)  
-    out += m[13]*np.cos(4*np.pi*t)  
-    for j,val in enumerate(jumps):
-      out += m[14+j]*_H(t-val)  
+  def system(m,diff=0):
+    if diff == 0:
+      out = np.zeros(len(t)) 
+      out += m[0]  
+      out += m[1]*t
+      out += m[2]*_H(t-start)
+      out += m[3]*_H(t-start)*(t-start)
+      out += m[4]*_pslog((t-start)/m[5])
+      out += m[6]*_pslog((t-start)/m[7])
+      out += m[8]*_pslog((t-start)/m[9])
+      out += m[10]*np.sin(2*np.pi*t)  
+      out += m[11]*np.sin(4*np.pi*t)  
+      out += m[12]*np.cos(2*np.pi*t)  
+      out += m[13]*np.cos(4*np.pi*t)  
+      for j,val in enumerate(jumps):
+        out += m[14+j]*_H(t-val)  
+
+    # derivative w.r.t. t
+    elif diff == 1:
+      out = np.zeros(len(t)) 
+      out += 0.0  
+      out += m[1]
+      out += 0.0
+      out += m[3]*_H(t-start)
+      out += _H(t-start)*m[4]/((t-start) + m[5])
+      out += _H(t-start)*m[6]/((t-start) + m[7])
+      out += _H(t-start)*m[8]/((t-start) + m[9])
+      out += m[10]*2*np.pi*np.cos(2*np.pi*t)  
+      out += m[11]*4*np.pi*np.cos(4*np.pi*t)  
+      out += -m[12]*2*np.pi*np.sin(2*np.pi*t)  
+      out += -m[13]*4*np.pi*np.sin(4*np.pi*t)  
 
     return out
   
-  nuisance_indices = np.arange(M,dtype=int)[10:]
-  signal_indices = np.arange(M,dtype=int)[:10]
+  nuisance_indices = np.arange(10,M,dtype=int)
+  signal_indices = np.arange(10,dtype=int)
   jacobian = modest.make_jacobian(system)
 
   best_err = np.inf
@@ -349,12 +365,12 @@ def log_filter(u,var,t,start,jumps,trials=10):
       pred = pred2
 
   # find the jacobian matrix for the final model estimate
-  jac = jacobian(m)  
+  jac = jacobian(m,diff=diff)  
 
   # find the estimated signal by evaluating the system with 0.0 for
   # the nuisance parameters
   m[nuisance_indices] = 0.0
-  signal_pred = system(m)
+  signal_pred = system(m,diff=diff)
 
   # slice the model covariance matrix and jacobian so that it only
   # contains columns for the parameters of interest
