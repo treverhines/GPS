@@ -258,7 +258,7 @@ def _pslog(t):
   return np.log(1 + _H(t)*t)
 
 
-def log_filter(u,var,t,start,jumps,trials=10,diff=0):
+def log_filter(u,var,t,start,jumps,trials=10,diff=0,detrend=False):
   '''
   Assumes that the underlying signal can be described by
   
@@ -318,8 +318,15 @@ def log_filter(u,var,t,start,jumps,trials=10,diff=0):
 
     return out
   
-  nuisance_indices = np.arange(10,M,dtype=int)
-  signal_indices = np.arange(10,dtype=int)
+  if detrend:  
+    idx1 = np.array([0,1])
+    idx2 = np.arange(10,M,dtype=int)
+    nuisance_indices = np.concatenate((idx1,idx2))
+    signal_indices = np.arange(2,10,dtype=int)
+  else:
+    nuisance_indices = np.arange(10,M,dtype=int)
+    signal_indices = np.arange(10,dtype=int)
+
   jacobian = modest.make_jacobian(system)
 
   best_err = np.inf
