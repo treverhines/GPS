@@ -1,24 +1,84 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import modest
 import gps.filter
+import scipy.special
 def H(t):
   return (t>=0).astype(float)
 
+
+def remove_jumps_and_seasonals(u,var,t,jumps):
+  J = len(jumps)
+  def system(m,t):
+    out = np.zeros(len(t))
+    out += m[0]
+    out += m[1]*t
+    out += m[2]*np.sin(2*np.pi*t)
+    out += m[3]*np.sin(4*np.pi*t)
+    out += m[4]*np.cos(2*np.pi*t)
+    out += m[5]*np.cos(4*np.pi*t)
+    for i in range(J):
+      out += m[2+i]*H(t-jumps[i])
+
+    return out
+      
+  signal_indices = np.array([0,1])
+  jacobian = modest.make_jacobian(system)  
+
+  m,mcov = modest.nonlin_lstsq(system,u,2+J,data_covariance=var,output=['solution','solution_covariance'],system_args=(t,))
+  jac = jacobian(m,t)
+  m = m[signal_indices]
+  jac = jac[:,signal_indices]
+  mcov = mcov[np.ix_(signal_indices,signal_indices)] 
+  pred = jac.dot(m)
+  predcov = jac.dot(mcov).dot(jac.T)
+  predvar = np.diag(predcov)
+  plt.errorbar(t,u,np.sqrt(var))
+  plt.errorbar(t,pred,np.sqrt(predvar))
+  plt.show()
+
+
 # create true signal
-N = 365*10
-t = np.linspace(-5.0,5.0,N)
-utrue = 0.1*np.log(1 + t*H(t)/0.1)
-utrue += 0.05*H(t-0.0)
+N = 2000
+t = np.linspace(-2.5,4.5,N)
+
+utrue = 0.01 + 0.0*t + 0.02*H(t) + 0.01*np.sqrt(H(t)*t/0.5) 
 
 # create synthetic correlated noise
 cov = 0.001**2/(1 + 50.0*(t[:,None] - t[None,:])**2)
 cov += 0.001**2*np.eye(N)
-noise = np.random.multivariate_normal(np.zeros(N),cov,1)[0]
+noise = np.random.multivariate_normal(np.zeros(N),cov,1)[0] 
+noise += 0.001*np.sin(2*np.pi*(t-0.5)) + 0.001*np.cos(4*np.pi*(t-0.17)) 
+noise -= 0.01*H(t-2.0) 
+var = np.diag(cov)
+uobs = utrue + noise 
+#upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[])
+upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[2.0])
+
+plt.plot(t,utrue,'b-')
+plt.errorbar(t,uobs,np.sqrt(var),fmt='k.')
+plt.errorbar(t,upred,np.sqrt(uvar),fmt='g-')
+plt.show()
+quit()
+#remove_jumps_and_seasonals(uobs,var,t,[])
+
+#upred = modest.nonlin_lstsq(system,utrue,6,output=['predicted'],system_args=(t,))
+plt.plot(t,utrue,'k')
+plt.plot(t,upred,'b')
+plt.show()
+
+
 
 
 uobs_var = np.diag(cov)
 uobs = utrue + noise
 
+
+plt.plot(t,utrue)
+plt.plot(t,uobs)
+plt.plot(t,upred)
+plt.show()
+quit()
 # add a jump to the noise at time 2 
 uobs -= 0.01*H(t-2.0)
 
