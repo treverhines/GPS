@@ -393,30 +393,50 @@ class StationDB(collections.OrderedDict):
     view_stationdb([self],**kwargs)
     
 def view_stationdb(db_list,**kwargs):
-  outfile_list = []
   buff_list = []
   for i,db in enumerate(db_list):
     dt = db.meta['min_tolerance']
     start = db.meta['start']
     end = db.meta['end']
     times = np.arange(start,end,dt)
-    outfile = '.temp%s.h5' % i
-    db.write_data_array(outfile,times)
-    outfile_list += [outfile]
-    buff_list += [h5py.File(outfile)]
+    #outfile = '.temp%s.h5' % i
+    #db.write_data_array(outfile,times)
+    f = {}
+    names = db.keys()
+    lon = [db[n].meta['longitude'] for n in names]
+    lat = [db[n].meta['latitude'] for n in names]
+    positions = np.array([lon,lat]).transpose()
+    f['position'] = positions
+    f['name'] = names
+    f['time'] = times
+    f['mean'] = np.zeros((len(times),len(names),3),dtype=float)
+    f['mask'] = np.zeros((len(times),len(names)),dtype=bool)
+    f['covariance'] = np.zeros((len(times),len(names),3,3),dtype=float)
+    f['variance'] = np.zeros((len(times),len(names),3),dtype=float)
+    for i,n in enumerate(names):
+      logger.info('writing displacement data for station %s' % n)
+      mean,cov = db[n](times)
+      f['mean'][:,i,:] = mean.data
+      f['mask'][:,i] = mean.mask[:,0]
+      f['covariance'][:,i,:,:] = cov.data
+      f['variance'][:,i,:] = cov.data[:,[0,1,2],[0,1,2]]
+
+    #outfile_list += [f]
+    buff_list += [f]
 
   plot.view(buff_list,**kwargs)
 
-  for buff in buff_list:
-    buff.close()
+  #for buff in buff_list:
+  #  buff.close()
 
-  for outfile in outfile_list:
-    os.remove(outfile)
+  #for outfile in outfile_list:
+  #  os.remove(outfile)
   
   
 
     
     
+    # find distance to next nearest time                         
 
   
 

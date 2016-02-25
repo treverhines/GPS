@@ -3,96 +3,40 @@ import numpy as np
 import modest
 import gps.filter
 import scipy.special
+
 def H(t):
   return (t>=0).astype(float)
 
-
-def remove_jumps_and_seasonals(u,var,t,jumps):
-  J = len(jumps)
-  def system(m,t):
-    out = np.zeros(len(t))
-    out += m[0]
-    out += m[1]*t
-    out += m[2]*np.sin(2*np.pi*t)
-    out += m[3]*np.sin(4*np.pi*t)
-    out += m[4]*np.cos(2*np.pi*t)
-    out += m[5]*np.cos(4*np.pi*t)
-    for i in range(J):
-      out += m[2+i]*H(t-jumps[i])
-
-    return out
-      
-  signal_indices = np.array([0,1])
-  jacobian = modest.make_jacobian(system)  
-
-  m,mcov = modest.nonlin_lstsq(system,u,2+J,data_covariance=var,output=['solution','solution_covariance'],system_args=(t,))
-  jac = jacobian(m,t)
-  m = m[signal_indices]
-  jac = jac[:,signal_indices]
-  mcov = mcov[np.ix_(signal_indices,signal_indices)] 
-  pred = jac.dot(m)
-  predcov = jac.dot(mcov).dot(jac.T)
-  predvar = np.diag(predcov)
-  plt.errorbar(t,u,np.sqrt(var))
-  plt.errorbar(t,pred,np.sqrt(predvar))
-  plt.show()
-
-
 # create true signal
-N = 100
-t = np.linspace(-2.5,4.5,N)
+N = 1000
+t = np.linspace(8.7,11.0,N)
 
-utrue = 0.0 + 1.0*t + 1.0*H(t) + 0.0*H(t)*t + np.log(1 + H(t)*t/0.5) + np.sin(2*np.pi*t)
+# the true signal which I am trying to recover consists of a linear trend with a rate of 0.05, 
+# a step at 10.257 with magnitude 0.01, plus a logarithm term
+utrue = 0.01*H(t-10.257) + 0.02*t  + 0.01*np.log(1 + H(t-10.257)*(t-10.257)/0.1)
 
-# create synthetic correlated noise
-cov = 0.1**2*np.eye(N)
-#noise += 0.001*np.sin(2*np.pi*(t-0.5)) + 0.001*np.cos(4*np.pi*(t-0.17)) 
-#noise -= 0.01*H(t-2.0) 
-var = np.diag(cov)
-uobs = utrue# + noise 
-#upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[])
-upred,uvar = gps.filter.log_filter(uobs,var,t,0.0,[2.0],diff=1)
+res = []
+for i in range(100):
+  # create synthetic noise
+  sigma = 0.001
+  # add white noise
+  noise = np.random.normal(0.0,sigma,N) 
+  # add seasonal term
+  noise += 0.005*np.sin(2*np.pi*t+0.1) + 0.04*np.cos(4*np.pi*t+0.2)
+  # add a jump at 10.6
+  noise += 0.4*H(t-10.6)
+  
+  uobs = utrue + noise 
+  upred,uvar = gps.filter.stochastic_filter(uobs,sigma**2*np.ones(N),t,teq=10.257,
+                                          jumps=[10.6],diff=0,alpha=0.1,
+                                          init_prior_var=0.01,detrend=False)
+  res += list((upred-utrue)/np.sqrt(uvar))
 
+plt.figure(1)
+plt.hist(res,50)
+plt.figure(2)
 plt.plot(t,utrue,'b-')
-plt.errorbar(t,uobs,np.sqrt(var),fmt='k.')
-plt.errorbar(t,upred,np.sqrt(uvar),fmt='g-')
-plt.plot(t,1 + 1.0/(t+0.5))
-plt.show()
-quit()
-#remove_jumps_and_seasonals(uobs,var,t,[])
-
-#upred = modest.nonlin_lstsq(system,utrue,6,output=['predicted'],system_args=(t,))
-plt.plot(t,utrue,'k')
-plt.plot(t,upred,'b')
+plt.fill_between(t,upred+np.sqrt(uvar),upred-np.sqrt(uvar),color='g',alpha=0.4)
+plt.plot(t,upred,'g-')
 plt.show()
 
-
-
-
-uobs_var = np.diag(cov)
-uobs = utrue + noise
-
-
-plt.plot(t,utrue)
-plt.plot(t,uobs)
-plt.plot(t,upred)
-plt.show()
-quit()
-# add a jump to the noise at time 2 
-uobs -= 0.01*H(t-2.0)
-
-
-alpha = 0.01
-jumps = [2.0]
-restarts = [0.0]
-upred,upred_var = gps.filter.stochastic_filter(uobs,uobs_var,t,alpha,jumps=jumps,restarts=restarts,init_prior_var=1e2)
-vpred,vpred_var = gps.filter.stochastic_filter(uobs,uobs_var,t,alpha,jumps=jumps,restarts=restarts,diff=1,init_prior_var=1e2)
-# add coore
-plt.plot(t,0.01*np.log(1 + t*H(t)/0.1))
-plt.plot(t,0.01*np.log(1 + t*H(t)/1.0))
-plt.plot(t,0.01*np.log(1 + t*H(t)/10.0))
-plt.plot(t,utrue)
-plt.errorbar(t,uobs,np.sqrt(uobs_var),fmt='k.')
-plt.errorbar(t,upred,np.sqrt(upred_var),fmt='b.')
-#plt.errorbar(t,vpred,np.sqrt(vpred_var),fmt='r.')
-plt.show()
