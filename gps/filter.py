@@ -6,7 +6,7 @@ import modest
 import matplotlib.pyplot as plt
  
 def is_pos_def(C):
-  '''
+  ''' 
   Returns True if C is positive definite. 
   '''
   try:
@@ -18,7 +18,7 @@ def is_pos_def(C):
   
 
 def _update(G,d,Cd,prior,Cprior):
-  '''
+  ''' 
   Parameters
   ----------
     G: system matrix
@@ -36,7 +36,7 @@ def _update(G,d,Cd,prior,Cprior):
 
 
 def _predict(F,Q,post,Cpost):
-  '''
+  ''' 
   Parameters
   ----------
     F: state transition matrix
@@ -50,7 +50,7 @@ def _predict(F,Q,post,Cpost):
 
 
 def _rts_smooth(post,Cpost,prior,Cprior,smooth,Csmooth,F):
-  '''
+  ''' 
   Parameters
   ----------
     post: posterior state for time i
@@ -61,196 +61,22 @@ def _rts_smooth(post,Cpost,prior,Cprior,smooth,Csmooth,F):
     Csmooth: smooth state covariance for time i+1
     F: transition matrix which takes the posterior from time i to the 
       prior for time i+1
-  '''    
+  '''
   Ck = Cpost.dot(F.T).dot(np.linalg.inv(Cprior))
   smooth_new = post + Ck.dot(smooth - prior)
   Csmooth_new = Cpost + Ck.dot(Csmooth - Cprior).dot(Ck.T)
   return smooth_new,Csmooth_new
 
-def _old_stochastic_filter(u,var,t,alpha,
-                       init_prior_var=1e3,
-                       jumps=None,
-                       diff=0):
-  u = np.asarray(u)
-  # turn u into an array of data vectors
-  u = u[:,None]
-  var = np.asarray(var)
-  # turn var into an array of covariance matrices
-  var = var[:,None,None]
-  t = np.asarray(t)
-
-  if jumps is None:
-    jumps = []
-
-  jumps = np.asarray(jumps)
-
-  N = t.shape[0]
-  J = jumps.shape[0]
-  M = 2 + J
-
-  # return empty arrays if the time length is zero
-  if N == 0:
-    return np.zeros(0),np.zeros(0)
-
-  # remove jumps that are not within the observation time interval
-  jumps = np.array([j for j in jumps if (j>t[0]) & (j<t[-1])])
-
-  state_prior = np.zeros((N,M))
-  state_post = np.zeros((N,M))
-  state_prior_cov = np.zeros((N,M,M))
-  state_post_cov = np.zeros((N,M,M))
-  state_smooth = np.zeros((N,M))
-  state_smooth_cov = np.zeros((N,M,M))
-  trans = np.zeros((N,M,M))
-
-  # set initial prior covariance
-  state_prior_cov[0,:,:] = init_prior_var*np.eye(M)
-
-  for i in range(N):
-    system = np.zeros((1,M))
-    system[0,0] = 1.0
-    for j,val in enumerate(jumps):
-      system[0,2+j] = _H(t[i]-val)
-
-    # use observations to form posterior
-    out = _update(system,u[i],var[i],state_prior[i],state_prior_cov[i])
-    state_post[i] = out[0]
-    state_post_cov[i] = out[1]
-
-    # update posterior to find prior for next step    
-    # Do not make a prediction for last time step
-    if i != (N-1):
-      dt = t[i+1] - t[i]
-      trans[i+1] = np.eye(M)
-      trans[i+1,0,1] = dt
-      trans_cov = np.zeros((M,M))
-      trans_cov[0,0] = 0.333*dt**3 
-      trans_cov[0,1] = 0.500*dt**2 
-      trans_cov[1,0] = 0.500*dt**2 
-      trans_cov[1,1] = dt
-      trans_cov *= alpha**2
-
-      out = _predict(trans[i+1],trans_cov,state_post[i],state_post_cov[i])
-      state_prior[i+1] = out[0]
-      state_prior_cov[i+1] = out[1]
-    
-  # smooth the state variables 
-  state_smooth[-1] = state_post[-1]
-  state_smooth_cov[-1] = state_post_cov[-1]
-
-  for k in range(N-1)[::-1]:
-    out = _rts_smooth(state_post[k],state_post_cov[k],
-                      state_prior[k+1],state_prior_cov[k+1],
-                      state_smooth[k+1],state_smooth_cov[k+1],
-                      trans[k+1])
-    state_smooth[k] = out[0]
-    state_smooth_cov[k] = out[1]
-
-  # check if all covariances matrices are positive definite. If not
-  # then numerical errors may have significantly influenced the 
-  # solution
-  for i in range(N):
-    if not is_pos_def(state_smooth_cov[i]):
-      print('WARNING: smoothed covariance at time %s is not positive '
-            'definite. This may be due to an accumulation of numerical '
-            'error. Consider rescaling the input parameters or '
-            'changing the initial prior and covariance' % t[i])
-
-  # returns the indicated derivative
-  out = state_smooth[:,diff]
-  out_var = state_smooth_cov[:,diff,diff]
-  return out,out_var
-
-
-def old_stochastic_filter(u,var,t,alpha,
-                      restarts=None,
-                      jumps=None,
-                      init_prior_var=1e3,
-                      diff=0):
-  '''
-  Description
-  -----------
-    Uses a Kalman filter to estimate a smooth underlying signal from
-    noisy, and possibly discontinous, data.
-
-    The acceleration of the underlying signal is modeled as white
-    noise with standard deviation alpha. A Kalman filter is used to
-    estimate the underlying signal and also estimate magnitudes of
-    jumps at known times.
-  
-    The observation function is
-   
-      u_obs(t) = u_true(t) + a_0*H(t-t_0) + ... a_J*H(t-t_J) + sigma
-  
-    
-    where sigma is is the observation noise, H(t) is the Heaviside
-    function, t_i are the jump times, a_i are the jump magnitudes that
-    will be estimates. u_true(t) is the true signal we are trying to
-    estimate, which is modeled as a stochastic process.
-
-    Our state vector consists of the true signal, its time 
-    derivative and the jump coefficients:
-
-      X(t) = [u_true(t), u_true'(t), a_0, ... a_J]. 
-
-    The state transition function is 
-   
-      X(t+1) = F(dt)*X(t) + epsilon
-
-    where epsilon is the process noise and 
-
-      F(dt) = [1.0  dt 0.0     0.0]
-              [0.0 1.0 0.0 ... 0.0] 
-              [0.0 0.0 1.0     0.0]
-              [     :          :  ]
-              [0.0 0.0 0.0 ... 1.0].
-
-    epsion has zero mean and covariance described by
-
-      Q(dt) = [dt**3/3 dt**2/2 0.0 ... 0.0]   
-              [dt**2/2      dt 0.0 ... 0.0]
-              [0.0         0.0 0.0     0.0]       
-              [     :                  :  ]
-              [0.0         0.0 0.0 ... 0.0].
-
-  Returns
-  -------
-    the estimate of u_true and its variance or the time derivative 
-    of u_true and its variance. 
-
-  '''
-  u = np.asarray(u)
-  var = np.asarray(var)
-  t = np.asarray(t)
-
-  if restarts is None:
-    restarts = np.zeros(0,dtype=float)
-
-  restarts = np.sort(restarts)
-  restarts = np.concatenate(([-np.inf],restarts,[np.inf]))
-  out = np.zeros(t.shape[0])
-  out_var = np.zeros(t.shape[0])
-  for i in range(restarts.shape[0]-1):
-    idx = (t >= restarts[i]) & (t < restarts[i+1])  
-    a,b = _stochastic_filter(u[idx],var[idx],t[idx],alpha,
-                             jumps=jumps,
-                             init_prior_var=init_prior_var,
-                             diff=diff)
-    out[idx] = a
-    out_var[idx] = b
-
-  return out,out_var
-
 
 def _H(t):
-  '''
+  ''' 
   heaviside function
   '''
   return (t>=0.0).astype(float)
 
 
 def _pslog(t):
-  '''
+  ''' 
   returns:
     log(1 + t) if t >= 0 
     0 if t < 0
@@ -258,7 +84,7 @@ def _pslog(t):
   return np.log(1 + _H(t)*t)
 
 def _psexp(t):
-  '''
+  ''' 
   returns:
     1 - exp(-t) if t >= 0 
     0 if t < 0
@@ -267,7 +93,7 @@ def _psexp(t):
 
 
 def logexp_filter(u,var,t,start,jumps,trials=10,diff=0,detrend=False,reg=1e-10):
-  '''
+  ''' 
   Assumes that the underlying signal can be described by
   
     u(t) = a + b*t + 
@@ -387,7 +213,7 @@ def logexp_filter(u,var,t,start,jumps,trials=10,diff=0,detrend=False,reg=1e-10):
 
 
 def log_filter(u,var,t,start,jumps,logs=3,trials=10,diff=0,detrend=False,reg=1e-10):
-  '''
+  ''' 
   Assumes that the underlying signal can be described by
   
     u(t) = a + b*t + 
@@ -513,9 +339,134 @@ def log_filter(u,var,t,start,jumps,logs=3,trials=10,diff=0,detrend=False,reg=1e-
   return signal_pred,signal_var  
 
 
-#def log_filter(u,var,t,start,jumps,logs=3,trials=10,diff=0,detrend=False,reg=1e-10):
-def stochastic_filter(u,var,t,teq=0.0,alpha=0.1,jumps=None,init_prior_var=1.0,diff=0,detrend=False):
-  '''
+def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
+                      init_prior=0.0,init_prior_var=1.0,diff=0):
+  u = np.asarray(u)
+  # turn u into an array of data vectors
+  u = u[:,None]
+  var = np.asarray(var)
+  # turn var into an array of covariance matrices
+  var = var[:,None,None]
+
+  t = np.asarray(t)
+  
+  if signal_jumps is None:
+    signal_jumps = []
+
+  if noise_jumps is None:
+    noise_jumps = []
+
+  signal_jumps = np.asarray(signal_jumps)
+  noise_jumps = np.asarray(noise_jumps)
+
+  # remove jumps that are not within the observation time interval
+  signal_jumps = np.array([j for j in signal_jumps if (j>t[0]) & (j<t[-1])])
+  noise_jumps = np.array([j for j in noise_jumps if (j>t[0]) & (j<t[-1])])
+  jumps = np.concatenate((signal_jumps,noise_jumps))
+  N = t.shape[0]
+  JN = noise_jumps.shape[0]
+  JS = signal_jumps.shape[0]
+  J = jumps.shape[0] 
+  # the state variable consists of 2 parameters for u and the rate of u 
+  # as well as a parameter for each jump and 4 seasonal terms
+  M = 6 + J 
+
+  # return empty arrays if there are no observations
+  if N == 0:
+    return np.zeros(0),np.zeros(0)
+
+  state_prior = np.zeros((N,M))
+  state_post = np.zeros((N,M))
+  state_prior_cov = np.zeros((N,M,M))
+  state_post_cov = np.zeros((N,M,M))
+  state_smooth = np.zeros((N,M))
+  state_smooth_cov = np.zeros((N,M,M))
+  trans = np.zeros((N,M,M))
+  trans_cov = np.zeros((N,M,M))
+  system = np.zeros((N,M))
+
+  # set initial prior covariance
+  state_prior_cov[0,:,:] = init_prior_var*np.eye(M) 
+  state_prior[0,:] = init_prior*np.ones(M)
+
+  # build system matrix for every time step
+  # Brownian motion
+  system[:,0] = 1.0
+  # Brownian motion velocity
+  system[:,1] = 0.0
+  for j,val in enumerate(jumps):
+    system[:,2+j] = _H(t-val)
+
+  # first annual seasonal term
+  system[:,2+J] = np.sin(2*np.pi*t)
+  # second annual seasonal term
+  system[:,2+J+1] = np.cos(2*np.pi*t)
+  # first semi-annual seasonal term
+  system[:,2+J+2] = np.sin(4*np.pi*t)
+  # second semi-annual seasonal term
+  system[:,2+J+3] = np.cos(4*np.pi*t)
+
+
+  # build transition matrix for every time step
+  dt = np.diff(t)
+  trans[1:] = np.eye(M)
+  trans[1:,0,1] = dt
+  trans_cov[1:,0,0] = alpha**2*0.333*dt**3 
+  trans_cov[1:,0,1] = alpha**2*0.500*dt**2 
+  trans_cov[1:,1,0] = alpha**2*0.500*dt**2 
+  trans_cov[1:,1,1] = alpha**2*dt
+  
+  for i in range(N):
+    # use observations to form posterior
+    out = _update(system[[i]],u[i],var[i],state_prior[i],state_prior_cov[i])
+    state_post[i] = out[0]
+    state_post_cov[i] = out[1]
+    # update posterior to find prior for next step    
+    # Do not make a prediction for last time step
+    if i != (N-1):
+      out = _predict(trans[i+1],trans_cov[i+1],state_post[i],state_post_cov[i])
+      state_prior[i+1] = out[0]
+      state_prior_cov[i+1] = out[1]
+    
+  # smooth the state variables 
+  state_smooth[-1] = state_post[-1]
+  state_smooth_cov[-1] = state_post_cov[-1]
+  for k in range(N-1)[::-1]:
+    out = _rts_smooth(state_post[k],state_post_cov[k],
+                      state_prior[k+1],state_prior_cov[k+1],
+                      state_smooth[k+1],state_smooth_cov[k+1],
+                      trans[k+1])
+    state_smooth[k] = out[0]
+    state_smooth_cov[k] = out[1]
+
+  # check if all covariances matrices are positive definite. If not
+  # then numerical errors may have significantly influenced the 
+  # solution
+  for i in range(N):
+    if not is_pos_def(state_smooth_cov[i]):
+      print('WARNING: smoothed covariance at time %s is not positive '
+            'definite. This may be due to an accumulation of numerical '
+            'error. Consider rescaling the input parameters or '
+            'changing the initial prior and covariance' % t[i])
+
+  # return the prediction to the data without the noise jumps
+  if diff == 0:
+    state_smooth = state_smooth[:,:-(JN+4)]
+    state_smooth_cov = state_smooth_cov[:,:-(JN+4),:]
+    state_smooth_cov = state_smooth_cov[:,:,:-(JN+4)]
+    system = system[:,:-(JN+4)]
+    out = np.einsum('...i,...i',system,state_smooth)
+    out_var = np.einsum('...i,...ij,...j',system,state_smooth_cov,system)
+  elif diff == 1:
+    out = state_smooth[:,1]
+    out_var = state_smooth_cov[:,1,1]
+
+  return out,out_var
+
+
+def stochastic_detrender(u,var,t,teq=0.0,alpha=0.1,jumps=None,prior_vel=None,prior_vel_var=None,
+                         init_prior_var=1.0,diff=0,detrend=False):
+  ''' 
   let u(t) be the true signal we are trying to recover and obs(t) be the observation
   of that signal which is obscured by jumps and seasonal processes. we say that our
   true signal is a sum of logarithms and integrated Brownian motion, B(t)
@@ -570,6 +521,10 @@ def stochastic_filter(u,var,t,teq=0.0,alpha=0.1,jumps=None,init_prior_var=1.0,di
 
   # set initial prior covariance
   state_prior_cov[0,:,:] = init_prior_var*np.eye(M) 
+
+  if prior_vel is not None:
+    state_prior[:,3] = prior_vel
+    state_prior_cov[:,3,3] = prior_vel_var
 
   # build system matrix for every time step
   # Brownian motion
@@ -656,27 +611,11 @@ def stochastic_filter(u,var,t,teq=0.0,alpha=0.1,jumps=None,init_prior_var=1.0,di
     out_var = state_smooth_cov[:,diff,diff]
 
   else:
-    if diff == 0:
-      system = np.zeros((N,3))
-      system[:,0] = _H(t-teq)
-      system[:,1] = 1.0
-      system[:,2] = t
-      state_smooth = state_smooth[:,[0,2,3]]
-      state_smooth_cov = np.array([c[np.ix_([0,2,3],[0,2,3])] for c in state_smooth_cov])
-
-    if diff == 1: 
-      system = np.zeros((N,2))
-      system[:,0] = _H(t-teq)
-      system[:,1] = 1.0
-      state_smooth = state_smooth[:,[1,3]]
-      state_smooth_cov = np.array([c[np.ix_([1,3],[1,3])] for c in state_smooth_cov])
-
+    # return the prediction to the data
     out = np.einsum('...i,...i',system,state_smooth)
     out_var = np.einsum('...i,...ij,...j',system,state_smooth_cov,system)
 
   return out,out_var
-
-
 
 
 def running_mean(u,var,t,Ns=10,jumps=None):

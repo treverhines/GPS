@@ -365,6 +365,28 @@ class StationDB(collections.OrderedDict):
 
 
   #def write_data_array(self,output_file_name,times,zero_initial_value=True):
+  def get_data_array(self,times):
+    f = {}
+    names = self.keys()
+    lon = [self[n].meta['longitude'] for n in names]
+    lat = [self[n].meta['latitude'] for n in names]
+    positions = np.array([lon,lat]).transpose()
+    f['position'] = positions
+    f['name'] = names
+    f['time'] = times
+    f['mean'] = np.zeros((len(times),len(names),3),dtype=float)
+    f['mask'] = np.zeros((len(times),len(names)),dtype=bool)
+    f['covariance'] = np.zeros((len(times),len(names),3,3),dtype=float)
+    f['variance'] = np.zeros((len(times),len(names),3),dtype=float)
+    for i,n in enumerate(names):
+      mean,cov = self[n](times)
+      f['mean'][:,i,:] = mean.data
+      f['mask'][:,i] = mean.mask[:,0]
+      f['covariance'][:,i,:,:] = cov.data
+      f['variance'][:,i,:] = cov.data[:,[0,1,2],[0,1,2]]
+
+    return f
+
   def write_data_array(self,output_file_name,times):
     # find distance to next nearest time                         
     f = h5py.File(output_file_name,'w')
@@ -395,10 +417,13 @@ class StationDB(collections.OrderedDict):
 def view_stationdb(db_list,**kwargs):
   buff_list = []
   for i,db in enumerate(db_list):
+
     dt = db.meta['min_tolerance']
     start = db.meta['start']
     end = db.meta['end']
     times = np.arange(start,end,dt)
+    f = db.get_data_array(times)
+    ''' 
     #outfile = '.temp%s.h5' % i
     #db.write_data_array(outfile,times)
     f = {}
@@ -420,7 +445,7 @@ def view_stationdb(db_list,**kwargs):
       f['mask'][:,i] = mean.mask[:,0]
       f['covariance'][:,i,:,:] = cov.data
       f['variance'][:,i,:] = cov.data[:,[0,1,2],[0,1,2]]
-
+    '''
     #outfile_list += [f]
     buff_list += [f]
 
