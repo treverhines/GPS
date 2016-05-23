@@ -4,47 +4,32 @@ import modest
 import gps.filter
 import scipy.special
 
-def H(t):
-  return (t>=0).astype(float)
+def func_utrue(t):
+  return np.log(t + 1.0)
+
+def func_noise(t,sigma):
+  return np.random.normal(0.0*sigma,sigma)
+
 
 # create true signal
-N = 1000
-t = np.linspace(10.3,11.0,N)
+alpha = 0.5
+N = 100
+t1 = np.linspace(0.0,2.2,N//2)
+t2 = np.linspace(2.21,5.5,N//2)
+t = np.concatenate((t1,t2))
+N = len(t)
 
-# the true signal which I am trying to recover consists of a linear trend with a rate of 0.05, 
-# a step at 10.257 with magnitude 0.01, plus a logarithm term
-utrue = 0.01*H(t-10.257) - 0.1*t  + 0.05*np.log(1 + H(t-10.257)*(t-10.257)/0.1)
-veltrue = 0.05*np.log(1 + H(t-10.257)*(t-10.257)/0.1)
-veltrue = np.diff(veltrue)/np.diff(t)
+sigma = 0.1*np.ones(N)
+utrue = func_utrue(t)
+noise = func_noise(t,sigma)
+u = utrue + noise
 
-res = []
+upred,ucov = gps.filter.stochastic_filter(u,sigma**2,t,alpha=alpha)
 
-# create synthetic noise
-sigma = 0.001
-# add white noise
-noise = np.random.normal(0.0,sigma,N) 
-# add seasonal term
-noise += 0.0*np.sin(2*np.pi*t+0.1) + 0.0*np.cos(4*np.pi*t+0.2)
-# add a jump at 10.6
-  
-uobs = utrue + noise 
+fig,ax = plt.subplots()
+ax.errorbar(t,u,sigma,0.0*sigma,fmt='.',color='k')
+ax.plot(t,upred)
+ax.fill_between(t,upred+np.sqrt(ucov),upred-np.sqrt(ucov),alpha=0.5,color='b')
+ax.set_xlim((-1.0,6.0))
 
-upred,uvar = gps.filter.stochastic_filter(uobs,sigma**2*np.ones(N),t,teq=10.257,
-                                          jumps=[],diff=1,alpha=0.1,
-                                          init_prior_var=0.1,detrend=True)
-
-plt.figure(1)
-plt.plot(t,uobs,'b-')
-plt.fill_between(t,upred+np.sqrt(uvar),upred-np.sqrt(uvar),color='g',alpha=0.4)
-plt.plot(t,upred,'g-')
-
-upred,uvar = gps.filter.stochastic_filter(uobs,sigma**2*np.ones(N),t,teq=10.257,
-                                          jumps=[],diff=1,alpha=0.1,prior_vel=-0.1,prior_vel_var=1e-10,
-                                          init_prior_var=0.1,detrend=True)
-
-plt.fill_between(t,upred+np.sqrt(uvar),upred-np.sqrt(uvar),color='r',alpha=0.4)
-plt.plot(t,upred,'r-')
-
-plt.plot(t[1:],veltrue,'m-')
 plt.show()
-

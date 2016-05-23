@@ -48,7 +48,7 @@ def quiver_args(position,disp_array,cov_array=None,mask=None):
     return (x,y,u,v)
 
 
-def create_default_basemap(lat_lst,lon_lst):
+def create_default_basemap(lat_lst,lon_lst,resolution='i'):
   ''' 
   creates a basemap that bounds lat_lst and lon_lst
   '''
@@ -73,7 +73,7 @@ def create_default_basemap(lat_lst,lon_lst):
                  llcrnrlat = llcrnrlat,
                  urcrnrlon = urcrnrlon,
                  urcrnrlat = urcrnrlat,
-                 resolution = 'h') 
+                 resolution = resolution) 
 
 def record_section(data_list,
                    epicenter,

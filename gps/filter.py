@@ -340,7 +340,7 @@ def log_filter(u,var,t,start,jumps,logs=3,trials=10,diff=0,detrend=False,reg=1e-
 
 
 def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
-                      init_prior=0.0,init_prior_var=1.0,diff=0):
+                      seasonal=True,init_prior=0.0,init_prior_var=1.0,diff=0):
   u = np.asarray(u)
   # turn u into an array of data vectors
   u = u[:,None]
@@ -369,7 +369,10 @@ def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
   J = jumps.shape[0] 
   # the state variable consists of 2 parameters for u and the rate of u 
   # as well as a parameter for each jump and 4 seasonal terms
-  M = 6 + J 
+  if seasonal:
+    M = 6 + J 
+  else:
+    M = 2 + J
 
   # return empty arrays if there are no observations
   if N == 0:
@@ -397,15 +400,15 @@ def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
   for j,val in enumerate(jumps):
     system[:,2+j] = _H(t-val)
 
-  # first annual seasonal term
-  system[:,2+J] = np.sin(2*np.pi*t)
-  # second annual seasonal term
-  system[:,2+J+1] = np.cos(2*np.pi*t)
-  # first semi-annual seasonal term
-  system[:,2+J+2] = np.sin(4*np.pi*t)
-  # second semi-annual seasonal term
-  system[:,2+J+3] = np.cos(4*np.pi*t)
-
+  if seasonal:
+    # first annual seasonal term
+    system[:,2+J] = np.sin(2*np.pi*t)
+    # second annual seasonal term
+    system[:,2+J+1] = np.cos(2*np.pi*t)
+    # first semi-annual seasonal term
+    system[:,2+J+2] = np.sin(4*np.pi*t)
+    # second semi-annual seasonal term
+    system[:,2+J+3] = np.cos(4*np.pi*t)
 
   # build transition matrix for every time step
   dt = np.diff(t)
@@ -451,12 +454,22 @@ def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
 
   # return the prediction to the data without the noise jumps
   if diff == 0:
-    state_smooth = state_smooth[:,:-(JN+4)]
-    state_smooth_cov = state_smooth_cov[:,:-(JN+4),:]
-    state_smooth_cov = state_smooth_cov[:,:,:-(JN+4)]
-    system = system[:,:-(JN+4)]
-    out = np.einsum('...i,...i',system,state_smooth)
-    out_var = np.einsum('...i,...ij,...j',system,state_smooth_cov,system)
+    if seasonal:
+      TOSS = JN + 4
+    else:
+      TOSS = JN 
+
+    if TOSS > 0:
+      state_smooth = state_smooth[:,:-TOSS]
+      state_smooth_cov = state_smooth_cov[:,:-TOSS,:]
+      state_smooth_cov = state_smooth_cov[:,:,:-TOSS]
+      system = system[:,:-TOSS]
+      out = np.einsum('...i,...i',system,state_smooth)
+      out_var = np.einsum('...i,...ij,...j',system,state_smooth_cov,system)
+    else:
+      out = np.einsum('...i,...i',system,state_smooth)
+      out_var = np.einsum('...i,...ij,...j',system,state_smooth_cov,system)
+
   elif diff == 1:
     out = state_smooth[:,1]
     out_var = state_smooth_cov[:,1,1]
