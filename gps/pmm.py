@@ -52,7 +52,7 @@ ITRFPMM_SIGMA = {
 }
 
 def itrf2008pmm(lon,lat,h,plate):
-  '''
+  ''' 
   Returns the velocities at given sites for the given tectonic 
   plate based on the plate motion model from Altamimi et al 2012.
   Velocities given in m/year for the  East, North and Up component

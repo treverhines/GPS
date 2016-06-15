@@ -414,10 +414,17 @@ def stochastic_filter(u,var,t,alpha=0.1,signal_jumps=None,noise_jumps=None,
   dt = np.diff(t)
   trans[1:] = np.eye(M)
   trans[1:,0,1] = dt
+  ####### CHANGE THIS BACK!!!!!!!!!!!!!!!!!!!!!!!!!!
   trans_cov[1:,0,0] = alpha**2*0.333*dt**3 
   trans_cov[1:,0,1] = alpha**2*0.500*dt**2 
   trans_cov[1:,1,0] = alpha**2*0.500*dt**2 
   trans_cov[1:,1,1] = alpha**2*dt
+  ####### CHANGE THIS BACK!!!!!!!!!!!!!!!!!!!!!!!!!!
+  #trans_cov[1:,0,0] = alpha**2*0.25*dt**4 
+  #trans_cov[1:,0,1] = alpha**2*0.500*dt**3 
+  #trans_cov[1:,1,0] = alpha**2*0.500*dt**3 
+  #trans_cov[1:,1,1] = alpha**2*dt**2
+  
   
   for i in range(N):
     # use observations to form posterior

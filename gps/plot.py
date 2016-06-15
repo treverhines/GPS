@@ -106,13 +106,11 @@ def record_section(data_list,
   lon = data_list[0]['position'][:,0]
   lat = data_list[0]['position'][:,1]
   station_names = data_list[0]['name'][:]  
-  print(station_names)
 
   if basemap is None:
     basemap = create_default_basemap(lat,lon)
 
 
-  
   # form polygon which encloses stations to include in the record section
   epicenter_xy = basemap(*epicenter)
   theta = np.linspace(angle_range[0],angle_range[1],100)
@@ -224,7 +222,6 @@ def record_section(data_list,
     #var = d['covariance'][:,include,1,1]
     std = np.sqrt(var)
 
-    print(disp[0,:])
     if idx == 0:
       scale = ts_width/(np.max(disp,axis=0) - np.min(disp,axis=0))
       shift = np.copy(disp[0,:])
@@ -435,11 +432,11 @@ def _view(displacement_list,
     basemap.drawcountries(ax=main_ax,linewidth=1.0,zorder=1,color=(0.3,0.3,0.3,1.0))
     basemap.drawstates(ax=main_ax,linewidth=1.0,zorder=1,color=(0.3,0.3,0.3,1.0))
     basemap.drawmeridians(np.arange(np.floor(basemap.llcrnrlon),
-                          np.ceil(basemap.urcrnrlon),1.0),
+                          np.ceil(basemap.urcrnrlon),0.5),
                           labels=[0,0,0,1],dashes=[2,2],
                           ax=main_ax,zorder=1,color=(0.3,0.3,0.3,1.0),fontsize=8,linewidth=0.5)
     basemap.drawparallels(np.arange(np.floor(basemap.llcrnrlat),
-                          np.ceil(basemap.urcrnrlat),1.0),
+                          np.ceil(basemap.urcrnrlat),0.5),
                           labels=[1,0,0,0],dashes=[2,2],
                           ax=main_ax,zorder=1,color=(0.3,0.3,0.3,1.0),fontsize=8,linewidth=0.5)
 
@@ -503,8 +500,6 @@ def _view(displacement_list,
   Q_lst = []
   for idx in range(N):
     time_idx = np.argmin(abs(time - time_list[idx]))
-    print(np.min(1000*displacement_list[idx][time_idx,:,2])) 
-    print(np.max(1000*displacement_list[idx][time_idx,:,2])) 
     if idx >= 1:
       main_ax.scatter(position[:,0],position[:,1],c=1000*displacement_list[idx][time_idx,:,2],s=50,linewidths=1,
                       cmap=matplotlib.cm.RdBu_r,vmin=vmin,vmax=vmax,edgecolor=mygreen,zorder=2)
@@ -636,13 +631,13 @@ def _view(displacement_list,
                                color=colors[i],alpha=0.4,edgecolor='none')
         sub_ax[0].plot(time_list[i][~midx],
                        1000*disp[~midx,0], 
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
         sub_ax[1].plot(time_list[i][~midx],
                        1000*disp[~midx,1], 
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
         sub_ax[2].plot(time_list[i][~midx],
                        1000*disp[~midx,2],
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
         #sub_ax[0].errorbar(times[~midx],
         #                   1000*disp[~midx,0], 
         #                   1000*np.sqrt(cov[~midx,0,0]),
@@ -658,13 +653,13 @@ def _view(displacement_list,
       else:
         sub_ax[0].plot(time_list[i][~midx],
                        1000*disp[~midx,0], 
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
         sub_ax[1].plot(time_list[i][~midx],
                        1000*disp[~midx,1], 
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
         sub_ax[2].plot(time_list[i][~midx],
                        1000*disp[~midx,2],
-                       color=colors[i],linestyle='-')
+                       color=colors[i],linestyle='-',marker='.')
 
 
     sub_ax[0].set_title('station %s (%s$^\circ$N, %s$^\circ$E)' % 

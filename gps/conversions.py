@@ -166,7 +166,7 @@ def ECEF_to_ENU_matrix(lon,lat,h):
 
 
 def ENU_to_ECEF(de,dn,du,lon,lat,h):
-  '''
+  ''' 
   Takes a change in east, north, and up directions and returns a change
   in x, y, and z directions
   '''
@@ -176,7 +176,7 @@ def ENU_to_ECEF(de,dn,du,lon,lat,h):
 
 
 def ECEF_to_ENU(dx,dy,dz,lon,lat,h):
-  '''
+  ''' 
   Takes a change in x, y, and z directions and returns a change
   in east, north, and up directions
   '''

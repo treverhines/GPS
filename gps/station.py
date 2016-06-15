@@ -7,13 +7,45 @@ import re
 import os
 import logging
 import conversions
-import modest
-import maskitp
 import collections
 import h5py
 import plot
+from scipy.spatial import cKDTree
 
 logger = logging.getLogger(__name__)
+
+
+class MeanInterpolant:
+  '''   
+  An interplant whose value at x is the mean of all values observed 
+  within some radius of x                                                
+  '''
+  def __init__(self,x,value):
+    x = np.asarray(x)
+    value = np.asarray(value)
+    # make x 2D if not already
+    if x.shape[0] != value.shape[0]:
+      raise ValueError('x and value must have the same first dimension')
+
+    # form observation KDTree 
+    self.Tobs = cKDTree(x)
+    self.value = value
+    self.value_shape = value.shape[1:]
+
+  def __call__(self,xitp,radius):
+    xitp = np.asarray(xitp)
+    Titp = cKDTree(xitp)
+    idx_arr = Titp.query_ball_tree(self.Tobs,radius)
+    out = np.zeros((xitp.shape[0],)+self.value_shape) 
+    for i,idx in enumerate(idx_arr):
+      if len(idx) == 0:
+        out[i] = np.nan  
+      else:
+        out[i] = np.mean(self.value[idx],axis=0)
+
+    # mask nans 
+    out = np.ma.masked_array(out,mask=np.isnan(out))
+    return out
 
 
 def find_field(field,s):
@@ -162,7 +194,7 @@ def parse_pos_string(string):
   return metadata,data
 
 class Station:
-  def __init__(self,pos_file_name,tol=1.0/365,db=None):
+  def __init__(self,pos_file_name,tol=0.5/365,db=None):
     f = open(pos_file_name,'r')
     pos_string = f.read()
     f.close()
@@ -173,14 +205,15 @@ class Station:
     self.itp = {}
     self.meta = meta 
     self.data = data
-    self.itp['mean'] = maskitp.MaskedNearestInterp(
-                         self.data['time'],
-                         self.data['mean'],
-                         self.meta['tolerance'])
-    self.itp['cov'] = maskitp.MaskedNearestInterp(
-                         self.data['time'],
-                         self.data['cov'],
-                         self.meta['tolerance'])
+    self.tol = tol
+    self.itp['mean'] = MeanInterpolant(
+                         self.data['time'][:,None],
+                         self.data['mean'])
+#                         self.meta['tolerance'])
+    self.itp['cov'] = MeanInterpolant(
+                         self.data['time'][:,None],
+                         self.data['cov'])
+#                         self.meta['tolerance'])
 
   def __repr__(self):
     string = '\nStation\n'
@@ -229,14 +262,14 @@ class Station:
     self.data['cov'] = np.array(cov,copy=True)
     self.data['cov'].setflags(write=False)
 
-    self.itp['mean'] = maskitp.MaskedNearestInterp(
-                         self.data['time'],
-                         self.data['mean'],
-                         self.meta['tolerance'])
-    self.itp['cov'] = maskitp.MaskedNearestInterp(
-                         self.data['time'],
-                         self.data['cov'],
-                         self.meta['tolerance'])
+    self.itp['mean'] = MeanInterpolant(
+                         self.data['time'][:,None],
+                         self.data['mean'])
+#                         self.meta['tolerance'])
+    self.itp['cov'] = MeanInterpolant(
+                         self.data['time'][:,None],
+                         self.data['cov'])
+#                         self.meta['tolerance'])
 
     self.meta['start'] = np.min(self.data['time'])    
     self.meta['end'] = np.max(self.data['time'])    
@@ -252,7 +285,7 @@ class Station:
 
 
   def __call__(self,t):
-    return self.itp['mean'](t),self.itp['cov'](t)        
+    return self.itp['mean'](t[:,None],self.tol),self.itp['cov'](t[:,None],self.tol)        
 
 
   def __getitem__(self,i):
@@ -260,7 +293,7 @@ class Station:
 
 
 class StationDB(collections.OrderedDict):
-  def __init__(self,database_directory,tol=1.0/365):
+  def __init__(self,database_directory,tol=0.5/365):
     collections.OrderedDict.__init__(self)
     pos_files = os.listdir(database_directory)
     # remove files without a .pos extension
@@ -418,7 +451,7 @@ def view_stationdb(db_list,**kwargs):
   buff_list = []
   for i,db in enumerate(db_list):
 
-    dt = db.meta['min_tolerance']
+    dt = 2*db.meta['min_tolerance']
     start = db.meta['start']
     end = db.meta['end']
     times = np.arange(start,end,dt)
