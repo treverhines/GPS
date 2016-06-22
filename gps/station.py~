@@ -11,15 +11,14 @@ import collections
 import h5py
 import plot
 from scipy.spatial import cKDTree
+from pygeons.downsample import MeanInterpolant
 
 logger = logging.getLogger(__name__)
 
-
+''' 
 class MeanInterpolant:
-  '''   
-  An interplant whose value at x is the mean of all values observed 
-  within some radius of x                                                
-  '''
+  #An interplant whose value at x is the mean of all values observed 
+  #within some radius of x                                                
   def __init__(self,x,value):
     x = np.asarray(x)
     value = np.asarray(value)
@@ -46,7 +45,7 @@ class MeanInterpolant:
     # mask nans 
     out = np.ma.masked_array(out,mask=np.isnan(out))
     return out
-
+'''
 
 def find_field(field,s):
   out = re.search('%s\s*:\s*(.*?)\n' % field,s,re.DOTALL+re.IGNORECASE)
@@ -178,15 +177,16 @@ def parse_pos_string(string):
             data_['north-vert. corr.']*data_['north std. dev.']*data_['vert. std. dev.'],
             data_['vert. std. dev.']**2]]
     cov = np.einsum('ijk->kij',cov)
-
+    sigma = np.sqrt(cov[:,[0,1,2],[0,1,2]])
+    
     data['time'] = np.array(time,copy=True)
     data['time'].setflags(write=False)
 
     data['mean'] = np.array(mean,copy=True)
     data['mean'].setflags(write=False)
 
-    data['cov'] = np.array(cov,copy=True)
-    data['cov'].setflags(write=False)
+    data['sigma'] = np.array(sigma,copy=True)
+    data['sigma'].setflags(write=False)
 
   else:
     logger.warning('version not recognized')
@@ -202,18 +202,13 @@ class Station:
     meta['tolerance'] = tol
 
     self.db = db
-    self.itp = {}
     self.meta = meta 
     self.data = data
     self.tol = tol
-    self.itp['mean'] = MeanInterpolant(
-                         self.data['time'][:,None],
-                         self.data['mean'])
-#                         self.meta['tolerance'])
-    self.itp['cov'] = MeanInterpolant(
-                         self.data['time'][:,None],
-                         self.data['cov'])
-#                         self.meta['tolerance'])
+    self.itp = MeanInterpolant(
+                 self.data['time'][:,None],
+                 self.data['mean'],
+                 sigma=self.data['sigma'])
 
   def __repr__(self):
     string = '\nStation\n'
@@ -237,21 +232,20 @@ class Station:
       self.db._update_metadata()      
 
 
-  def set_data(self,time=None,mean=None,cov=None):
+  def set_data(self,time=None,mean=None,sigma=None):
     if time is None:
       time = self.data['time']
 
     if mean is None:
       mean = self.data['mean']
 
-    if cov is None:
-      cov = self.data['cov']
+    if sigma is None:
+      sigma = self.data['sigma']
 
     assert np.shape(time)[0] == np.shape(mean)[0]
-    assert np.shape(time)[0] == np.shape(cov)[0]
+    assert np.shape(time)[0] == np.shape(sigma)[0]
     assert np.shape(mean)[1] == 3
-    assert np.shape(cov)[1] == 3
-    assert np.shape(cov)[2] == 3
+    assert np.shape(sigma)[1] == 3
 
     self.data['time'] = np.array(time,copy=True)
     self.data['time'].setflags(write=False)
@@ -259,17 +253,13 @@ class Station:
     self.data['mean'] = np.array(mean,copy=True)
     self.data['mean'].setflags(write=False)
 
-    self.data['cov'] = np.array(cov,copy=True)
-    self.data['cov'].setflags(write=False)
+    self.data['sigma'] = np.array(sigma,copy=True)
+    self.data['sigma'].setflags(write=False)
 
-    self.itp['mean'] = MeanInterpolant(
-                         self.data['time'][:,None],
-                         self.data['mean'])
-#                         self.meta['tolerance'])
-    self.itp['cov'] = MeanInterpolant(
-                         self.data['time'][:,None],
-                         self.data['cov'])
-#                         self.meta['tolerance'])
+    self.itp = MeanInterpolant(
+                 self.data['time'][:,None],
+                 self.data['mean'],
+                 sigma=self.data['sigma'])
 
     self.meta['start'] = np.min(self.data['time'])    
     self.meta['end'] = np.max(self.data['time'])    
@@ -281,15 +271,15 @@ class Station:
   def get_data(self):
     return (np.copy(self.data['time']),
             np.copy(self.data['mean']),
-            np.copy(self.data['cov']))
+            np.copy(self.data['sigma']))
 
 
   def __call__(self,t):
-    return self.itp['mean'](t[:,None],self.tol),self.itp['cov'](t[:,None],self.tol)        
+    return self.itp(t[:,None],self.tol)
 
 
   def __getitem__(self,i):
-    return self.data['time'][i],self.data['mean'][i],self.data['cov'][i]        
+    return self.data['time'][i],self.data['mean'][i],self.data['sigma'][i]        
 
 
 class StationDB(collections.OrderedDict):
@@ -409,14 +399,16 @@ class StationDB(collections.OrderedDict):
     f['time'] = times
     f['mean'] = np.zeros((len(times),len(names),3),dtype=float)
     f['mask'] = np.zeros((len(times),len(names)),dtype=bool)
+    f['sigma'] = np.zeros((len(times),len(names),3),dtype=float)
     f['covariance'] = np.zeros((len(times),len(names),3,3),dtype=float)
     f['variance'] = np.zeros((len(times),len(names),3),dtype=float)
     for i,n in enumerate(names):
-      mean,cov = self[n](times)
-      f['mean'][:,i,:] = mean.data
-      f['mask'][:,i] = mean.mask[:,0]
-      f['covariance'][:,i,:,:] = cov.data
-      f['variance'][:,i,:] = cov.data[:,[0,1,2],[0,1,2]]
+      mean,sigma = self[n](times)
+      f['mean'][:,i,:] = mean
+      f['mask'][:,i] = np.any(np.isinf(sigma),axis=1)
+      f['covariance'][:,i,:,:] = np.array([np.diag(v) for v in np.nan_to_num(sigma**2)])
+      f['variance'][:,i,:] = np.nan_to_num(sigma**2)
+      f['sigma'][:,i,:] = np.nan_to_num(sigma)
 
     return f
 
@@ -434,13 +426,15 @@ class StationDB(collections.OrderedDict):
     f.create_dataset('mask',shape=(len(times),len(names)),dtype=bool)
     f.create_dataset('covariance',shape=(len(times),len(names),3,3),dtype=float)
     f.create_dataset('variance',shape=(len(times),len(names),3),dtype=float)
+    f.create_dataset('sigma',shape=(len(times),len(names),3),dtype=float)
     for i,n in enumerate(names):
       logger.info('writing displacement data for station %s' % n)
-      mean,cov = self[n](times)
-      f['mean'][:,i,:] = mean.data
-      f['mask'][:,i] = mean.mask[:,0]
-      f['covariance'][:,i,:,:] = cov.data
-      f['variance'][:,i,:] = cov.data[:,[0,1,2],[0,1,2]]
+      mean,sigma = self[n](times)
+      f['mean'][:,i,:] = mean
+      f['mask'][:,i] = np.any(np.isinf(sigma),axis=1)
+      f['covariance'][:,i,:,:] = np.array([np.diag(v) for v in np.nan_to_num(sigma**2)])
+      f['variance'][:,i,:] = np.nan_to_num(sigma**2)
+      f['sigma'][:,i,:] = np.nan_to_num(sigma)
 
     f.close()
 

@@ -12,10 +12,10 @@ print(k1)
 
 
 t,u,c = db[k1][:]
-ti = np.arange(db[k1].meta['start'],db[k1].meta['end'],1.0/365.25)
+ti = np.arange(db[k1].meta['start'],db[k1].meta['end'],2.0/365.25)
 ui,ci = db[k1](ti)
 
-plt.plot(t,u,'ko')
-plt.plot(ti,ui,'bo')
+plt.errorbar(t,u[:,0],c[:,0],color='k')
+plt.errorbar(ti,ui[:,0],ci[:,0],color='b')
 plt.show()
 #db.view()
